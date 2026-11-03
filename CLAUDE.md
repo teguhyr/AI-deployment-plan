@@ -135,6 +135,7 @@ Saat diminta update teknologi AI:
 AI-deployment-plan/
 ├── CLAUDE.md            # Instruksi kerja Claude (file ini)
 ├── modules/             # Modul AI deployment (strategi → readiness → arsitektur → agentic → evaluasi)
+├── tools/               # Alat interaktif (kalkulator readiness & scorecard)
 ├── strategy/            # Visi, roadmap, business case, prioritas use case
 ├── architecture/        # Arsitektur solusi, ADR, pemilihan model
 ├── workflows/           # Workflow n8n & otomasi (JSON + dokumentasi)

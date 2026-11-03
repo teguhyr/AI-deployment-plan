@@ -1,0 +1,425 @@
+<title>Kalkulator Readiness AI</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap">
+<style>
+/* Layout: header band → tab switcher → two-column workspace (inputs left, live summary right) that stacks on phones */
+:root {
+  --bg: #F3F1EC; --surface: #FFFEFA; --sunk: #ECE8DF; --line: #D9D3C6;
+  --ink: #14213D; --muted: #505C70; --accent: #A84A14; --accent-soft: #F4E4D7;
+  --target: #3F679E;
+  --good: #1D6E45; --good-bg: #DCEFE3; --warn: #7A5600; --warn-bg: #F5E9C6; --bad: #A8261B; --bad-bg: #FADFDA;
+  --display: 'Source Serif 4', Georgia, serif;
+  --body: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E1628; --surface: #16203A; --sunk: #1C2844; --line: #2D3A58;
+    --ink: #EDF1F7; --muted: #A8B3C6; --accent: #F2A65A; --accent-soft: #3A2A1D;
+    --target: #8DB2EA;
+    --good: #74D3A0; --good-bg: #15362A; --warn: #F0C766; --warn-bg: #393019; --bad: #FF8E80; --bad-bg: #431F1C;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0E1628; --surface: #16203A; --sunk: #1C2844; --line: #2D3A58;
+  --ink: #EDF1F7; --muted: #A8B3C6; --accent: #F2A65A; --accent-soft: #3A2A1D;
+  --target: #8DB2EA;
+  --good: #74D3A0; --good-bg: #15362A; --warn: #F0C766; --warn-bg: #393019; --bad: #FF8E80; --bad-bg: #431F1C;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 28px 56px; display: flex; flex-direction: column; gap: 20px; }
+header { display: flex; flex-direction: column; gap: 6px; }
+.eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+h1 { font-family: var(--display); font-weight: 600; font-size: clamp(26px, 4vw, 38px); line-height: 1.15; margin: 0; text-wrap: balance; }
+h2 { font-family: var(--display); font-weight: 600; font-size: 22px; margin: 0; text-wrap: balance; }
+h3 { font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0; }
+p { margin: 0; }
+.lede { color: var(--muted); max-width: 68ch; }
+.tabs { display: flex; gap: 4px; background: var(--sunk); padding: 4px; border-radius: 10px; width: fit-content; max-width: 100%; flex-wrap: wrap; }
+.tabs button { font: 600 14px var(--body); color: var(--muted); background: transparent; border: 0; padding: 9px 16px; border-radius: 7px; cursor: pointer; }
+.tabs button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(20,33,61,.12); }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.work { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 880px) { .work { grid-template-columns: 1fr; } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.note { font-size: 13px; color: var(--muted); }
+.example { font-size: 12px; font-weight: 600; color: var(--accent); background: var(--accent-soft); padding: 3px 8px; border-radius: 999px; }
+
+/* readiness rows */
+.dims { display: flex; flex-direction: column; }
+.dim { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 4px 14px; padding: 14px 0; border-top: 1px solid var(--line); }
+.dim:first-child { border-top: 0; padding-top: 0; }
+.letter { grid-row: span 2; font-family: var(--display); font-size: 34px; font-weight: 600; line-height: 1; color: var(--accent); }
+.dim-name { font-weight: 600; }
+.dim-ind { font-size: 13px; color: var(--muted); }
+.dim-ctrl { grid-column: 2; display: grid; grid-template-columns: 92px minmax(0, 1fr) minmax(0, 1fr); gap: 14px; margin-top: 8px; }
+@media (max-width: 520px) { .dim-ctrl { grid-template-columns: 1fr 1fr; } .dim-ctrl .wgt { grid-column: span 2; } }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field label { font-size: 12px; font-weight: 600; color: var(--muted); display: flex; justify-content: space-between; gap: 6px; }
+.field output { font-family: var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+input[type="number"], input[type="text"], select { font: 14px var(--body); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; width: 100%; min-width: 0; font-variant-numeric: tabular-nums; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+input.tgt-range { accent-color: var(--target); }
+.lvl { font-size: 12px; color: var(--muted); }
+
+/* summary */
+.big { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.big-num { font-family: var(--display); font-size: 56px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+.big-unit { color: var(--muted); }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: 999px; width: fit-content; }
+.chip::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.s-good { color: var(--good); background: var(--good-bg); }
+.s-warn { color: var(--warn); background: var(--warn-bg); }
+.s-bad { color: var(--bad); background: var(--bad-bg); }
+.s-none { color: var(--muted); background: var(--sunk); }
+.radar { width: 100%; max-width: 380px; height: auto; align-self: center; }
+.radar .ring { fill: none; stroke: var(--line); }
+.radar .axis { stroke: var(--line); }
+.radar .lbl { fill: var(--muted); font: 600 12px var(--body); }
+.radar .cur { fill: var(--accent); fill-opacity: .18; stroke: var(--accent); stroke-width: 2; }
+.radar .tgt { fill: none; stroke: var(--target); stroke-width: 2; stroke-dasharray: 5 4; }
+.radar .dot { fill: var(--accent); }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--muted); justify-content: center; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 18px; height: 0; border-top: 3px solid var(--accent); }
+.sw.t { border-top: 3px dashed var(--target); }
+.gaps { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.gaps li { display: flex; justify-content: space-between; gap: 10px; padding: 9px 12px; background: var(--sunk); border-radius: 8px; font-size: 14px; }
+.gaps b { font-family: var(--mono); font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.warnline { font-size: 13px; color: var(--warn); background: var(--warn-bg); padding: 8px 12px; border-radius: 8px; }
+
+/* scorecard */
+.table-scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 14px; }
+th { text-align: left; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 0 8px 8px; border-bottom: 1px solid var(--line); }
+td { padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+td.pillar { font-weight: 600; white-space: nowrap; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+td input[type="number"] { text-align: right; }
+.w-sm { width: 74px; } .w-md { width: 96px; }
+.check { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; }
+.check input { margin-top: 3px; width: 18px; height: 18px; accent-color: var(--bad); }
+.bars { display: flex; flex-direction: column; gap: 12px; }
+.bar-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; font-size: 14px; }
+.bar-track { grid-column: span 2; position: relative; height: 10px; background: var(--sunk); border-radius: 5px; overflow: hidden; }
+.bar-fill { position: absolute; inset: 0 auto 0 0; border-radius: 5px; }
+.bar-fill.s-good { background: var(--good); } .bar-fill.s-warn { background: var(--warn); } .bar-fill.s-bad { background: var(--bad); } .bar-fill.s-none { background: var(--line); }
+.tick { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--surface); }
+.bar-val { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 13px; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.btn { font: 600 14px var(--body); padding: 9px 14px; border-radius: 8px; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+.btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.copied { font-size: 13px; color: var(--good); align-self: center; }
+textarea.fallback { width: 100%; min-height: 160px; font: 13px var(--mono); background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+footer { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+@media (prefers-reduced-motion: no-preference) { .bar-fill { transition: width .25s ease; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Toolkit workshop AI Deployment · Modul 02 &amp; 05</p>
+    <h1>Kalkulator Readiness &amp; Scorecard AI</h1>
+    <p class="lede">Isi skor kesiapan organisasi dan capaian KPI. Indeks, status, dan prioritas gap dihitung langsung. Angka awal adalah <b>contoh</b>; ganti dengan data organisasi Anda.</p>
+  </header>
+
+  <div class="tabs" role="tablist" aria-label="Pilih alat">
+    <button role="tab" id="tab-readiness" aria-controls="view-readiness" aria-selected="true">Readiness (ASPIRE)</button>
+    <button role="tab" id="tab-scorecard" aria-controls="view-scorecard" aria-selected="false">AI Deployment Scorecard</button>
+  </div>
+
+  <!-- READINESS -->
+  <section id="view-readiness" role="tabpanel" aria-labelledby="tab-readiness" class="work">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Enam dimensi kesiapan</h2>
+        <span class="example" id="r-example">Data contoh</span>
+      </div>
+      <p class="note">Skor 1 Awareness · 2 Exploring · 3 Defined · 4 Scaling · 5 Transforming. Target adalah posisi yang ingin dicapai dalam 12 bulan.</p>
+      <div class="dims" id="dims"></div>
+    </div>
+    <div class="panel" aria-live="polite">
+      <h3>Indeks readiness</h3>
+      <div class="big"><span class="big-num" id="r-index">–</span><span class="big-unit">dari 5,0</span></div>
+      <span class="chip" id="r-chip">–</span>
+      <p id="r-advice"></p>
+      <p class="warnline" id="r-wwarn" hidden></p>
+      <svg class="radar" id="radar" viewBox="0 0 360 330" role="img" aria-label="Grafik radar skor saat ini dan target per dimensi"></svg>
+      <div class="legend"><span><i class="sw"></i>Saat ini</span><span><i class="sw t"></i>Target 12 bulan</span></div>
+      <h3>Prioritas gap (bobot × selisih)</h3>
+      <ol class="gaps" id="gaps"></ol>
+    </div>
+  </section>
+
+  <!-- SCORECARD -->
+  <section id="view-scorecard" role="tabpanel" aria-labelledby="tab-scorecard" class="work" hidden>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Lima pilar, satu KPI utama per pilar</h2>
+        <span class="example" id="s-example">Data contoh</span>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Pilar</th><th class="num">Bobot %</th><th>KPI utama</th><th>Arah</th><th class="num">Target</th><th class="num">Aktual</th><th class="num">Capaian</th><th>Status</th></tr></thead>
+          <tbody id="s-body"></tbody>
+        </table>
+      </div>
+      <label class="check" for="s-incident"><input type="checkbox" id="s-incident"><span><b>Ada insiden risiko mayor periode ini.</b> Status pilar Risk &amp; Governance otomatis merah, apa pun capaian KPI-nya.</span></label>
+      <p class="note">Capaian = aktual ÷ target (atau target ÷ aktual bila lebih rendah lebih baik). Kontribusi ke skor total dibatasi maksimal 100% per pilar. Status: hijau ≥ 90% · kuning 70–89% · merah &lt; 70%.</p>
+    </div>
+    <div class="panel" aria-live="polite">
+      <h3>Skor total portofolio</h3>
+      <div class="big"><span class="big-num" id="s-total">–</span><span class="big-unit">% dari target</span></div>
+      <span class="chip" id="s-chip">–</span>
+      <p class="warnline" id="s-wwarn" hidden></p>
+      <h3>Capaian per pilar</h3>
+      <div class="bars" id="s-bars"></div>
+      <p class="note">Garis putih pada bar menandai ambang 70% dan 90%.</p>
+    </div>
+  </section>
+
+  <div class="actions">
+    <button class="btn primary" id="copy">Salin ringkasan</button>
+    <button class="btn" id="reset">Kembalikan ke data contoh</button>
+    <span class="copied" id="copied" hidden>Ringkasan tersalin.</span>
+  </div>
+  <textarea class="fallback" id="fallback" hidden aria-label="Ringkasan untuk disalin manual"></textarea>
+
+  <footer>
+    <p>Kerangka: adaptasi BCG ASPIRE (2026) ke level organisasi, AI Deployment Scorecard dari Modul 05. Bobot dan ambang adalah patokan awal; sesuaikan dengan organisasi.</p>
+    <p>Data hanya tersimpan di browser Anda. Jangan memasukkan data pribadi karyawan atau pelanggan.</p>
+  </footer>
+</div>
+
+<script>
+(function () {
+  var DIMS = [
+    { k: 'A', n: 'Ambition', i: 'Strategi AI direview rutin, AI Council, sponsor C-level, target nilai di RKAP' },
+    { k: 'S', n: 'Skills', i: 'Literasi AI, talenta AI per 1.000 karyawan, pengguna aktif, program upskilling' },
+    { k: 'P', n: 'Policy & Regulation', i: 'AI Policy, data governance, kepatuhan UU PDP, AI risk assessment' },
+    { k: 'I', n: 'Investment', i: 'Anggaran AI, rasio 10-20-70, business case per use case' },
+    { k: 'R', n: 'Research & Innovation', i: 'PoC per kuartal, konversi PoC ke produksi, kemitraan riset' },
+    { k: 'E', n: 'Ecosystem', i: 'Cloud dan compute, platform gen AI bersama, integrasi API ke sistem inti' }
+  ];
+  var LEVELS = ['', 'Awareness', 'Exploring', 'Defined', 'Scaling', 'Transforming'];
+  var PILLARS = ['Value', 'Adoption & People', 'Performance & Quality', 'Risk & Governance', 'Capability'];
+
+  function example() {
+    return {
+      r: [
+        { w: 15, cur: 3, tgt: 4 }, { w: 20, cur: 2, tgt: 3.5 }, { w: 20, cur: 2.5, tgt: 3.5 },
+        { w: 15, cur: 2, tgt: 3 }, { w: 10, cur: 1.5, tgt: 2.5 }, { w: 20, cur: 2.5, tgt: 3.5 }
+      ],
+      s: [
+        { w: 30, kpi: 'ROI portofolio AI (%)', dir: 'up', tgt: 150, act: 120 },
+        { w: 25, kpi: 'Pengguna aktif mingguan (WAU %)', dir: 'up', tgt: 50, act: 42 },
+        { w: 20, kpi: 'Hallucination rate (%)', dir: 'down', tgt: 3, act: 4 },
+        { w: 15, kpi: 'Use case ter-assess risiko (%)', dir: 'up', tgt: 100, act: 80 },
+        { w: 10, kpi: 'Indeks readiness (1–5)', dir: 'up', tgt: 3.5, act: 2.4 }
+      ],
+      incident: false, edited: false
+    };
+  }
+
+  var KEY = 'ai-readiness-scorecard-v1';
+  var state = example();
+  try { var saved = JSON.parse(localStorage.getItem(KEY) || 'null'); if (saved && saved.r && saved.s) state = saved; } catch (e) {}
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+
+  var $ = function (id) { return document.getElementById(id); };
+  function fmt(n, d) { return Number(n).toLocaleString('id-ID', { minimumFractionDigits: d, maximumFractionDigits: d }); }
+  function num(v) { var n = parseFloat(String(v).replace(',', '.')); return isFinite(n) ? n : 0; }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  /* ---------- READINESS ---------- */
+  function buildDims() {
+    $('dims').innerHTML = DIMS.map(function (d, i) {
+      var r = state.r[i];
+      return '<div class="dim">' +
+        '<span class="letter" aria-hidden="true">' + d.k + '</span>' +
+        '<span class="dim-name">' + esc(d.n) + '</span>' +
+        '<span class="dim-ind">' + esc(d.i) + '</span>' +
+        '<div class="dim-ctrl">' +
+          '<div class="field wgt"><label for="rw' + i + '">Bobot %</label><input type="number" id="rw' + i + '" min="0" max="100" step="5" value="' + r.w + '"></div>' +
+          '<div class="field"><label for="rc' + i + '">Saat ini <output id="rco' + i + '"></output></label><input type="range" id="rc' + i + '" min="1" max="5" step="0.5" value="' + r.cur + '"><span class="lvl" id="rcl' + i + '"></span></div>' +
+          '<div class="field"><label for="rt' + i + '">Target <output id="rto' + i + '"></output></label><input type="range" class="tgt-range" id="rt' + i + '" min="1" max="5" step="0.5" value="' + r.tgt + '"><span class="lvl" id="rtl' + i + '"></span></div>' +
+        '</div></div>';
+    }).join('');
+    DIMS.forEach(function (_, i) {
+      $('rw' + i).addEventListener('input', function (e) { state.r[i].w = Math.max(0, num(e.target.value)); touch(); });
+      $('rc' + i).addEventListener('input', function (e) { state.r[i].cur = num(e.target.value); touch(); });
+      $('rt' + i).addEventListener('input', function (e) { state.r[i].tgt = num(e.target.value); touch(); });
+    });
+  }
+
+  function readiness() {
+    var sw = 0, sc = 0, st = 0;
+    state.r.forEach(function (r) { sw += r.w; sc += r.w * r.cur; st += r.w * r.tgt; });
+    return { sum: sw, idx: sw ? sc / sw : 0, tidx: sw ? st / sw : 0 };
+  }
+  function band(idx) {
+    if (idx < 2) return { cls: 's-bad', label: 'Fondasi', advice: 'Bangun fondasi dulu: Ambition, Policy, dan Skills. Mulai dari use case Deploy berisiko rendah.' };
+    if (idx < 3.5) return { cls: 's-warn', label: 'Siap pilot terstruktur', advice: 'Jalankan pilot terstruktur dan Reshape terbatas dengan stage gate yang jelas.' };
+    return { cls: 's-good', label: 'Siap scaling', advice: 'Siap scaling lintas unit dan mulai eksplorasi inisiatif Invent.' };
+  }
+
+  function renderReadiness() {
+    state.r.forEach(function (r, i) {
+      $('rco' + i).textContent = fmt(r.cur, 1);
+      $('rto' + i).textContent = fmt(r.tgt, 1);
+      $('rcl' + i).textContent = LEVELS[Math.floor(r.cur)];
+      $('rtl' + i).textContent = LEVELS[Math.floor(r.tgt)];
+    });
+    var R = readiness(), b = band(R.idx);
+    $('r-index').textContent = R.sum ? fmt(R.idx, 2) : '–';
+    $('r-chip').className = 'chip ' + (R.sum ? b.cls : 's-none');
+    $('r-chip').textContent = R.sum ? b.label : 'Isi bobot';
+    $('r-advice').textContent = R.sum ? b.advice + ' Indeks target: ' + fmt(R.tidx, 2) + '.' : 'Semua bobot bernilai 0.';
+    var ww = $('r-wwarn');
+    ww.hidden = Math.round(R.sum) === 100;
+    ww.textContent = 'Total bobot ' + fmt(R.sum, 0) + '%, bukan 100%. Indeks tetap dihitung proporsional terhadap total bobot.';
+    drawRadar();
+    var gaps = state.r.map(function (r, i) { return { d: DIMS[i], g: r.tgt - r.cur, p: r.w * (r.tgt - r.cur) }; })
+      .filter(function (x) { return x.g > 0; }).sort(function (a, b) { return b.p - a.p; }).slice(0, 3);
+    $('gaps').innerHTML = gaps.length ? gaps.map(function (x) {
+      return '<li><span>' + x.d.k + ' · ' + esc(x.d.n) + '</span><b>+' + fmt(x.g, 1) + ' poin</b></li>';
+    }).join('') : '<li><span>Tidak ada gap: semua dimensi sudah mencapai target.</span></li>';
+  }
+
+  function drawRadar() {
+    var cx = 180, cy = 165, R = 112, n = 6, svg = '';
+    function pt(i, v) { var a = -Math.PI / 2 + i * 2 * Math.PI / n, r = R * v / 5; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; }
+    for (var l = 1; l <= 5; l++) {
+      var ring = []; for (var i = 0; i < n; i++) ring.push(pt(i, l).map(function (v) { return v.toFixed(1); }).join(','));
+      svg += '<polygon class="ring" points="' + ring.join(' ') + '"/>';
+    }
+    for (var j = 0; j < n; j++) {
+      var e = pt(j, 5); svg += '<line class="axis" x1="' + cx + '" y1="' + cy + '" x2="' + e[0].toFixed(1) + '" y2="' + e[1].toFixed(1) + '"/>';
+      var lp = pt(j, 6.05), anchor = Math.abs(lp[0] - cx) < 4 ? 'middle' : (lp[0] > cx ? 'start' : 'end');
+      svg += '<text class="lbl" x="' + lp[0].toFixed(1) + '" y="' + (lp[1] + 4).toFixed(1) + '" text-anchor="' + anchor + '">' + DIMS[j].k + ' ' + esc(DIMS[j].n.split(' ')[0]) + '</text>';
+    }
+    var t = state.r.map(function (r, i) { return pt(i, r.tgt).map(function (v) { return v.toFixed(1); }).join(','); }).join(' ');
+    var c = state.r.map(function (r, i) { return pt(i, r.cur).map(function (v) { return v.toFixed(1); }).join(','); }).join(' ');
+    svg += '<polygon class="cur" points="' + c + '"/>';
+    svg += '<polygon class="tgt" points="' + t + '"/>';
+    state.r.forEach(function (r, i) { var p = pt(i, r.cur); svg += '<circle class="dot" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="3.5"/>'; });
+    $('radar').innerHTML = svg;
+  }
+
+  /* ---------- SCORECARD ---------- */
+  function buildScorecard() {
+    $('s-body').innerHTML = PILLARS.map(function (p, i) {
+      var s = state.s[i];
+      return '<tr>' +
+        '<td class="pillar">' + esc(p) + '</td>' +
+        '<td class="num"><input class="w-sm" type="number" id="sw' + i + '" min="0" max="100" step="5" value="' + s.w + '" aria-label="Bobot ' + esc(p) + '"></td>' +
+        '<td><input type="text" id="sk' + i + '" value="' + esc(s.kpi) + '" aria-label="KPI utama ' + esc(p) + '"></td>' +
+        '<td><select id="sd' + i + '" aria-label="Arah KPI ' + esc(p) + '"><option value="up">Lebih tinggi lebih baik</option><option value="down">Lebih rendah lebih baik</option></select></td>' +
+        '<td class="num"><input class="w-md" type="number" id="st' + i + '" step="any" value="' + s.tgt + '" aria-label="Target ' + esc(p) + '"></td>' +
+        '<td class="num"><input class="w-md" type="number" id="sa' + i + '" step="any" value="' + s.act + '" aria-label="Aktual ' + esc(p) + '"></td>' +
+        '<td class="num" id="sp' + i + '">–</td>' +
+        '<td id="ss' + i + '"></td>' +
+        '</tr>';
+    }).join('');
+    PILLARS.forEach(function (_, i) {
+      $('sd' + i).value = state.s[i].dir;
+      $('sw' + i).addEventListener('input', function (e) { state.s[i].w = Math.max(0, num(e.target.value)); touch(); });
+      $('sk' + i).addEventListener('input', function (e) { state.s[i].kpi = e.target.value; touch(); });
+      $('sd' + i).addEventListener('change', function (e) { state.s[i].dir = e.target.value; touch(); });
+      $('st' + i).addEventListener('input', function (e) { state.s[i].tgt = num(e.target.value); touch(); });
+      $('sa' + i).addEventListener('input', function (e) { state.s[i].act = num(e.target.value); touch(); });
+    });
+    $('s-incident').checked = !!state.incident;
+  }
+
+  function ach(s) {
+    if (s.dir === 'up') return s.tgt > 0 ? s.act / s.tgt : null;
+    if (s.act <= 0) return s.tgt >= 0 ? 1.2 : null;
+    return s.tgt > 0 ? s.tgt / s.act : null;
+  }
+  function status(a) {
+    if (a === null) return { cls: 's-none', label: 'Belum ada data' };
+    if (a >= 0.9) return { cls: 's-good', label: 'Hijau · sesuai target' };
+    if (a >= 0.7) return { cls: 's-warn', label: 'Kuning · perlu perhatian' };
+    return { cls: 's-bad', label: 'Merah · perlu tindakan' };
+  }
+  function scorecard() {
+    var rows = state.s.map(function (s, i) {
+      var a = ach(s), st = status(a);
+      if (i === 3 && state.incident) st = { cls: 's-bad', label: 'Merah · insiden mayor' };
+      var contrib = a === null ? 0 : Math.min(a, 1);
+      if (i === 3 && state.incident) contrib = Math.min(contrib, 0.69);
+      return { a: a, st: st, contrib: contrib };
+    });
+    var sw = 0, sc = 0;
+    state.s.forEach(function (s, i) { sw += s.w; sc += s.w * rows[i].contrib; });
+    return { rows: rows, sum: sw, total: sw ? sc / sw : null };
+  }
+
+  function renderScorecard() {
+    var S = scorecard();
+    S.rows.forEach(function (r, i) {
+      $('sp' + i).textContent = r.a === null ? '–' : fmt(Math.min(r.a, 9.99) * 100, 0) + '%';
+      $('ss' + i).innerHTML = '<span class="chip ' + r.st.cls + '">' + r.st.label + '</span>';
+    });
+    var tot = S.total, st = status(tot);
+    $('s-total').textContent = tot === null ? '–' : fmt(tot * 100, 0);
+    $('s-chip').className = 'chip ' + st.cls;
+    $('s-chip').textContent = tot === null ? 'Isi bobot' : st.label.replace(' · ', ': ');
+    var ww = $('s-wwarn');
+    ww.hidden = Math.round(S.sum) === 100;
+    ww.textContent = 'Total bobot ' + fmt(S.sum, 0) + '%, bukan 100%. Skor dihitung proporsional terhadap total bobot.';
+    $('s-bars').innerHTML = PILLARS.map(function (p, i) {
+      var r = S.rows[i], w = r.a === null ? 0 : Math.min(r.a, 1) * 100;
+      return '<div class="bar-row"><span>' + esc(p) + '</span><span class="bar-val">' + (r.a === null ? '–' : fmt(Math.min(r.a, 9.99) * 100, 0) + '%') + '</span>' +
+        '<div class="bar-track" aria-hidden="true"><div class="bar-fill ' + r.st.cls + '" style="width:' + w.toFixed(1) + '%"></div><i class="tick" style="left:70%"></i><i class="tick" style="left:90%"></i></div></div>';
+    }).join('');
+  }
+
+  /* ---------- common ---------- */
+  function touch() { state.edited = true; save(); render(); }
+  function render() {
+    renderReadiness(); renderScorecard();
+    $('r-example').hidden = !!state.edited; $('s-example').hidden = !!state.edited;
+  }
+
+  $('s-incident').addEventListener('change', function (e) { state.incident = e.target.checked; touch(); });
+
+  function summary() {
+    var R = readiness(), b = band(R.idx), S = scorecard();
+    var lines = ['RINGKASAN READINESS & SCORECARD AI', '',
+      'Indeks readiness: ' + fmt(R.idx, 2) + ' / 5 (' + b.label + '), target ' + fmt(R.tidx, 2)];
+    state.r.forEach(function (r, i) { lines.push('- ' + DIMS[i].k + ' ' + DIMS[i].n + ': ' + fmt(r.cur, 1) + ' → ' + fmt(r.tgt, 1) + ' (bobot ' + r.w + '%)'); });
+    lines.push('', 'Skor total scorecard: ' + (S.total === null ? '–' : fmt(S.total * 100, 0) + '% (' + status(S.total).label + ')'));
+    state.s.forEach(function (s, i) {
+      var r = S.rows[i];
+      lines.push('- ' + PILLARS[i] + ' (' + s.w + '%): ' + s.kpi + ' — aktual ' + s.act + ' vs target ' + s.tgt + ' → ' + (r.a === null ? '–' : fmt(r.a * 100, 0) + '%') + ', ' + r.st.label);
+    });
+    if (state.incident) lines.push('', 'Catatan: ada insiden risiko mayor pada periode ini.');
+    return lines.join('\n');
+  }
+  $('copy').addEventListener('click', function () {
+    var text = summary(), ok = $('copied'), fb = $('fallback');
+    function fallback() { fb.hidden = false; fb.value = text; fb.focus(); fb.select(); ok.hidden = false; ok.textContent = 'Salin teks di bawah secara manual.'; }
+    try {
+      navigator.clipboard.writeText(text).then(function () { fb.hidden = true; ok.hidden = false; ok.textContent = 'Ringkasan tersalin.'; setTimeout(function () { ok.hidden = true; }, 2500); }, fallback);
+    } catch (e) { fallback(); }
+  });
+  $('reset').addEventListener('click', function () { state = example(); save(); buildDims(); buildScorecard(); render(); });
+
+  /* tabs + hash */
+  var VIEWS = ['readiness', 'scorecard'];
+  function show(v) {
+    if (VIEWS.indexOf(v) < 0) v = 'readiness';
+    VIEWS.forEach(function (x) { $('view-' + x).hidden = x !== v; $('tab-' + x).setAttribute('aria-selected', x === v ? 'true' : 'false'); });
+  }
+  VIEWS.forEach(function (v) { $('tab-' + v).addEventListener('click', function () { if (location.hash !== '#' + v) location.hash = v; else show(v); }); });
+  window.addEventListener('hashchange', function () { show(location.hash.slice(1)); });
+
+  buildDims(); buildScorecard(); render(); show(location.hash.slice(1));
+})();
+</script>
